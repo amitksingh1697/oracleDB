@@ -1,0 +1,260 @@
+Prerequisite SQL
+	create table toys (
+	  toy_name varchar2(30),
+	  price    number(4, 2)
+	);
+
+	insert into toys values ('Baby Turtle', 0.01);
+	insert into toys values ('Miss Snuggles', 0.51);
+	insert into toys values ('Cuteasaurus', 10.01);
+	insert into toys values ('Sir Stripypants', 14.03);
+	insert into toys values ('Purple Ninja', 14.22);
+
+	commit;
+	
+Module 1
+
+	Introduction
+		This tutorial teaches you how to remove rows from a table using delete and truncate. It uses the following table to show how these work:
+
+		select * from toys
+		
+Module 2
+
+	Delete
+		Delete is another form of DML statement. You use it to remove rows from a table. An unqualified delete will erase all the rows from the table. So toys is empty after the delete statement:
+
+		delete from toys;
+
+		select * from toys;
+
+		rollback;
+
+		select * from toys;
+		The rollback undoes the delete, restoring the rows.
+
+		As with insert and update, you can supply a where clause. This only removes rows where the clause is true. So the following deletes the rows where the prices is less than one:
+
+		delete toys where price < 1;
+
+		select * from toys;
+
+		rollback;
+
+		select * from toys;
+		Note that the from clause is optional in delete.
+
+		Like update, delete locks the affected rows. This is from the time the statement starts until you commit or rollback the transaction. If someone else tries to update rows you're deleting, you block their update until your transaction ends.
+
+Module 3
+
+	Truncate
+		You can also remove all the rows from a table with truncate. Unlike delete, this is a Data Definition Language (DDL) statement in Oracle Database.
+
+		DDL statements (create table, alter table, etc.) commit. So you can't rollback a truncate!
+
+		Note how, even after the rollback, the table remains empty:
+
+		select * from toys;
+
+		truncate table toys;
+
+		select * from toys;
+
+		rollback;
+
+		select * from toys;
+		Truncate is also an all-or-nothing statement. You can't remove some rows using a where clause. If you add one, the statement throws an error:
+
+		truncate table toys where price < 1;
+		So with these gotchas, you may be wondering why you'd use truncate over delete. One key reason: performance.
+
+		Truncate is fast. It marks the table as empty without touching the data. So truncate operations are instant, no matter how many rows the table stores.
+
+		Whereas delete processes each row. So as the number of rows in the table increases, the time to delete them all will also increase. Deleting millions of rows can take hours to complete!
+
+		Truncate also deallocates a table's storage. But the space remains allocated to the table with delete.
+
+		If you want the space to stay assigned to the table after a truncate, use the "reuse storage" clause, like so:
+
+		truncate table toys reuse storage;
+		Keeping the storage is useful if you re-insert a similar number of rows soon after the truncate. For example, on a daily load from an external system. Leaving the space assigned to the table reduces the work the database does during the load.
+
+Module 4
+
+	Soft Deletes
+		Once you commit a delete or run a truncate, the rows are gone. To recover the data you need to restore from a backup*.
+
+		This is time-consuming and awkward. So it's hard to recover data deleted by accident. Many businesses are also subject to regulations stating that they can't remove certain types of data. For example, financial transactions.
+
+		So many applications implement a "soft delete" instead. This adds an "is deleted" flag to your tables. For example:
+
+		alter table toys add is_deleted varchar2(1) default 'N';
+		When adding new rows, ensure this value is N (No):
+
+		delete toys;
+
+		insert into toys values ('Baby Turtle', 0.01, 'N');
+		insert into toys values ('Miss Snuggles', 0.51, 'N');
+		insert into toys values ('Cuteasaurus', 10.01, 'N');
+		insert into toys values ('Sir Stripypants', 14.03, 'N');
+		insert into toys values ('Purple Ninja', 14.22, 'N');
+
+		select * from toys;
+
+		commit;
+		Now, to "delete" rows, you run an update. This sets the deleted flag to Yes:
+
+		update toys
+		set    is_deleted = 'Y'
+		where  toy_name = 'Cuteasaurus';
+
+		select * from toys;
+		But now you need to filter out the "deleted" values in most queries. This makes your code more complicated. To get only active rows, you need to add a where clause to all these queries. For example:
+
+		select * from toys
+		where is_deleted = 'N';
+		Luckily Oracle Database offers many ways to simplify this, including:
+
+		Using views
+		Virtual Private Database (VPD)
+		In-Database Archiving
+		Views
+		The most universal way is to create a view over the top of the table. This contains the query excluding "deleted" rows. You change your application to query the view instead of the table.
+
+		For example:
+
+		create or replace view active_toys as
+		  select * from toys
+		  where is_deleted = 'N';
+
+		select * from active_toys;
+		Ensuring all code uses the view can be hard to police. And it can be a lot of work to change your code to use the view. This makes it tough to add to existing applications.
+
+		VPD
+		You use VPD to control which users can see which rows. It does this by adding where clauses to your queries based on policies. This is primarily a security feature, allowing you to stop people seeing sensitive data without clearance. But you can also use it to manage soft-deletion.
+
+		For more on VPD, read this article.
+
+		In-Database Archiving
+		Oracle Database 12c introduced In-Database Archiving. This offers a new way to show or hide removed rows. It adds the invisible column ora_archive_state to each table you enable it for.
+
+		Do this with the following command:
+
+		alter table toys row archival;
+		You then "delete" rows by setting ora_archive_state to any value other than zero. For example:
+
+		update toys 
+		set    ora_archive_state = '1'
+		where  toy_name = 'Baby Turtle';
+
+		select * from toys;
+		You control which rows are visible in the session. If you set the row archival visibility to all, you see everything:
+
+		alter session set row archival visibility = all;
+
+		select * from toys;
+		To auto-filter out the deleted rows, set the visibility to active:
+
+		alter session set row archival visibility = active;
+
+		select * from toys;
+		Note that you can enable In-Database Archiving on a table AND your own soft-delete method. So ensure whichever method you use to do soft deletion, you document it well. Explain how it works to all new developers on your team. And use the same approach throughout your application!
+
+		*Oracle Flashback technologies enable you to recover lost data without a backup![https://blogs.oracle.com/sql/how-to-recover-data-without-a-backup]
+		
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+QUIZ:-
+
+1. Which of the following statements can you use to remove rows from a table in Oracle Database? -> delete, truncate
+
+2. Truncate commits -> TRUE
+
+3. Which of the following are benefits of using soft deletes to "remove" rows from your application?
+	Answers:- You can recover "deleted" rows without going to backup
+		It can make it harder for users to cover up cases of fraud or other double-dealing
+
+4. You store the following animal details in this table:
+		create table animals (
+		  animal_name varchar2(30),
+		  birth_date  date,
+		  species     varchar2(30)
+		);
+
+		insert into animals values ( 
+		  'Lonesome George', date'1912-01-01', 'tortoise'
+		);
+		insert into animals values ( 
+		  'Smoky', date'1943-07-07', 'dog'
+		);
+		insert into animals values ( 
+		  'Xiang Xiang', date'2001-09-09', 'panda'
+		);
+		commit;
+Which of the following choices remove all the rows except the one for Lonesome George?
+So after a correct choice, when you query animals the only row you get is:
+		select * from animals;
+
+		ANIMAL_NAME       BIRTH_DATE   SPECIES
+		Lonesome George   01-JAN-12    tortoise
+		
+		Answers:- delete animals where  animal_name <> 'Lonesome George';
+			delete animals where  species in ( 'dog', 'panda' );
+			delete animals where  birth_date >= date'1920-01-01';
+			
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Review Quizs:-
+
+1. Your application stores toy details in this table:
+		create table toys (
+		  toy_id   integer, 
+		  toy_name varchar2(30),
+		  colour   varchar2(10),
+		  price    number(10, 2)
+		);
+Which of the following choices will insert a row into it?
+
+	Answers:- insert into toys values ( 2, 'Mr. Snuggles', 'blue', 10.99 );
+		insert into toys ( toy_id, price, toy_name, colour ) values ( 4, 10.99, 'Mr. Snuggles', 'blue' );
+		insert into toys ( toy_id, price ) values ( 5, 10.99 );
+
+2. Which of the following statements about lost updates are true?
+	Answers:- A lost update happens when one user overwrites another's changes
+		You can stop lost updates with optimistic locking
+
+3. In the following statement, Oracle Database will add each row in toys into at most one of blue_toys, cheap_toys or expensive_toys:
+		insert first 
+		  when colour = 'blue' then 
+			into blue_toys values (toy_name, price)
+		  when price >= 0 then 
+			into cheap_toys values (toy_name, price, colour)
+		  when price > 20 then 
+			into expensive_toys values (toy_name, price, colour)
+		  select toy_name, price, colour from toys;
+		  
+	Answers:- TRUE
+		  
+4. Which of the following statements are true about deadlocks?
+	Answers:- Deadlock happens when two or more people try to lock the same rows in a different order
+		To reduce the chance of deadlock, at the start of your transaction you should lock all the rows you intend to change in a table with "select ... for update"
+
+5. You've created this table to store details about bricks:
+		create table bricks (
+		  colour varchar2(10),
+		  shape  varchar2(10)
+		);
+Which of the following choices add a row to the table and then remove it, so when you run this after the choice:
+		select * from bricks; 
+		It returns no rows?
+You can assume that the table is empty before you run each choice. Please select all that apply.
+
+	Answers:- insert into bricks (colour, shape) values ('blue', 'cube'); delete bricks;
+		insert into bricks (colour, shape) values ('blue', 'cube'); truncate table bricks;
+		insert into bricks (colour, shape) values ('blue', 'cube'); rollback;
+		
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

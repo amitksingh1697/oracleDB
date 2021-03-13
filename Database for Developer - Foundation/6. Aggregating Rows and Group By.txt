@@ -1,0 +1,383 @@
+Prerequisite SQL
+	create table bricks (
+	  colour varchar2(10),
+	  shape  varchar2(10),
+	  weight integer
+	);
+
+	insert into bricks values ( 'red', 'cube', 1 );
+	insert into bricks values ( 'red', 'pyramid', 2 );
+	insert into bricks values ( 'red', 'cuboid', 1 );
+
+	insert into bricks values ( 'blue', 'cube', 1 );
+	insert into bricks values ( 'blue', 'pyramid', 2 );
+
+	insert into bricks values ( 'green', 'cube', 3 );
+
+	commit;
+	
+
+Module 1
+
+	Introduction
+		This tutorial shows you how to summarize your data using aggregate functions and group by. It uses the following table as its source:
+
+		select * from bricks;
+		
+Module 2
+	Aggregate Functions
+		Aggregate functions combine many rows into one. The query returns one row for each group. If you use these without group by, you have one group. So the query will return one row.
+
+		For example, count() returns the number of rows the query processed. So this query gets one row, showing you how many rows there are in the bricks table:
+
+		select count (*) from bricks;
+		Count is unusual for accepting *. This means return the total number of rows. You can also pass an expression (column) to it. This returns the number of non-null rows for the expression. For example, the following shows you how many rows where colour is not null:
+
+		select count ( colour ) from bricks;
+		All other (non-count) aggregates use an expression. Oracle Database includes many statistical aggregate functions. Common ones include:
+
+		Sum: the result of adding up all the values for the expression in the group
+		Min: the smallest value in the group
+		Max: the largest value in the group
+		Avg: the arithmetic mean of all the values in the group
+		Stddev: the standard deviation
+		Median: the middle value in the data set
+		Variance: the statistical variance of the values
+		Stats_mode: the most common value in the group
+		The following query shows these in action:
+
+		select sum ( weight ), min ( weight ), max ( weight ), 
+			   avg ( weight ), stddev ( weight ),
+			   median ( weight ), variance ( weight ),
+			   stats_mode ( weight ) 
+		from   bricks;
+		There are also many other, more specialized aggregates. You can find a complete list of aggregate functions in the docs.
+		
+		Some of the most common functions you'll use include:
+			count
+				This calculates the number of values your query processes. Count(*) always returns the total number of rows. But count ( column ) gives the number of rows that don't have a null value for that column. 
+
+			min and max
+				These return the smallest and largest value respectively in the set.
+
+			sum
+				This adds up all the values and returns the total. Note this only works on numeric values!
+
+			avg
+				This calculates the arithmetic mean, i.e. the sum divided by the count. As with sum, this only works on numeric data.
+
+			stddev
+				This determines the standard deviation in your data. As with avg and sum, this only works on numbers.
+
+Module 3
+
+	Distinct vs. All
+		By default aggregate functions use every input value. But most allow you to work on the unique values in the input. You do this with the keyword distinct.
+
+		For example, you can find the number of different values in the colour column by passing "distinct colour" to count. There are three colours (red, green, and blue). So doing this returns three:
+
+		select count ( distinct colour ) number_of_different_colours
+		from   bricks;
+		You can explicitly tell the function to process every row with the keyword all. You can also use unique as a synonym for distinct:
+
+		select count ( all colour ) total_number_of_rows, 
+		   count ( distinct colour ) number_of_different_colours, 
+		   count ( unique colour ) number_of_unique_colours
+		from   bricks;
+		You can also use distinct in most stats functions, like sum and avg. The brick table stores the weights 1, 1, 1, 2, 2, and 3. Which has the distinct values 1, 2, and 3. So the overall weight and mean are 10 and 1.66... respectively. But the distinct sum and weight are 6 and 2:
+
+		select sum ( weight ) total_weight, sum ( distinct weight ) sum_of_unique_weights, 
+		   avg ( weight ) overall_mean, avg ( distinct weight ) mean_of_unique_weights
+		from   bricks;
+		Not all aggregates support distinct. Refer to the documentation for full details.
+
+Module 4
+
+	Grouping Aggregates
+		As well as the overall total, you can split the results into separate groups. You do this with group by. This returns one row for each combination of values in the group by columns.
+
+		For example, the following returns the number of rows for each colour:
+
+		select colour, count (*) 
+		from   bricks
+		group  by colour;
+		You don't need to include all the columns in the group by in your select clause. The following splits the rows by colours as above. But excludes colour from the output:
+
+		select count (*) 
+		from   bricks
+		group  by colour;
+		This can be confusing, so it's a good idea to include all the grouping columns in your select.
+
+		But the reverse isn't true! All unaggregated values in your select clause must be in the group by.
+
+		So the following will raise an exception because shape is in the select, but not the group by:
+
+		select colour, shape, count (*) 
+		from   bricks
+		group  by colour;
+		You can group by many columns. The following returns the number of rows for each shape and weight:
+
+		select shape, weight, count (*) 
+		from   bricks
+		group  by shape, weight;
+
+Module 5
+
+	Filtering Aggregates
+		The database processes group by after the where clause. So the following excludes rows with a weight <= 1 from the count:
+
+		select colour, count (*) 
+		from   bricks
+		where  weight > 1
+		group  by colour;
+		You can only filter unaggregated values in the where clause. If you include aggregate functions here, you'll get an error.
+
+		For example, the following tries to return the colours which have more than one row:
+
+		select colour, count (*)
+		from   bricks
+		where  count (*) > 1
+		group  by colour;
+		But it throws an ORA-00934 error.
+
+		to filter aggregate functions, use the having clause. This can go before or after group by. So the following both return the colours which have more than one row in bricks:
+
+		select colour, count (*)
+		from   bricks
+		group  by colour
+		having count (*) > 1;
+
+		select colour, count (*) 
+		from   bricks
+		having count (*) > 1
+		group  by colour;
+		You can use different functions in your select and having clauses. For example, the following finds the colours which have a total weight greater than 1. And returns how many rows there are for each of these colours:
+
+		select colour, count (*) 
+		from   bricks
+		having sum ( weight ) > 1
+		group  by colour;
+		
+Module 6
+
+	Generating Subtotals
+		You can also use group by to generate subtotals for each value in the grouping columns. You can do this with rollup or cube.
+
+		Rollup
+			Rollup generates the subtotals for the columns within it, working from right to left. So a rollup of:
+
+			rollup ( colour, shape )
+			calculates:
+
+			Totals for each ( colour, shape ) pair
+			Totals for each colour
+			The grand total
+			The groups using every column in the rollup are regular rows. Those based on a subset are supperaggregate rows. For these superaggreagtes, the database returns null for the grouped columns. So the colour totals show null for shape. And the grand total null for colour and shape:
+
+			select colour, shape, count (*)
+			from   bricks
+			group  by rollup ( colour, shape );
+			You can combine a rollup with non-rolledup columns. In this case the "grand total" is for the columns outside the rollup. The following calculates the total for each ( colour, shape ) pair and the number of rows for each colour:
+
+			select colour, shape, count (*)
+			from   bricks
+			group  by colour, rollup ( shape );
+			Rollup calculates N+1 groupings, where N is the number of expressions in the rollup. So a rollup with three columns returns 3+1 = 4 groupings.
+
+		Cube
+			Cube calculates the subtotals for every combination of columns within it. So if you use:
+
+			cube ( colour, shape )
+			You get groupings for:
+
+			Each ( colour, shape ) pair
+			Each colour
+			Each shape
+			All the rows in the table
+			select colour, shape, count (*)
+			from   bricks
+			group  by cube ( colour, shape );
+			Cube calculates 2^N groupings, where N is the number of expressions in the cube. So a cube with three columns returns 2^3 = 8 groupings.
+			
+		Grouping Sets
+			If you're grouping by lots of columns there may be specific subtotals you want. You could get them by using cube or rollup. But then you need to exclude the unwanted combinations. Grouping sets enables you to state exactly which you want. Place brackets around each set of columns you want to get totals for. Empty brackets give the grand total. For example:
+
+			grouping sets ( color, (shape, size), (color, size), () )
+			Gives you totals for
+
+			color
+			shape, size
+			color, size
+			The grand total for all rows
+			
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+QUIZ:-
+
+1. Which of the following functions can you use to aggregate rows? ->count, min, sum, avg, stddev
+
+2. Which of the following statements about group by are true?
+	Ans:- It returns one row for each unique combination of values in the columns in the group,
+		You can use a having clause to filter aggregations for each group
+
+3. Which of the following group by extensions can you use to get subtotals for the columns within it?  -> rollup, cube
+
+4. You have the table clothes which stores these rows:
+		CLOTHING_TYPE   CLOTHING_SIZE   
+		shirt           XS              
+		shirt           XXXL            
+		skirt           M               
+		trousers        L 
+Mark a choice as correct if it displays the following single row of data:
+		CT   
+		----
+		   4
+	
+	Ans:- select count (*) ct from   clothes;
+		select count ( clothing_type ) ct from   clothes;
+		select count ( distinct clothing_size ) ct  from   clothes;
+		
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Review Quizs:-
+
+1. You have a table, BRICKS, which stores details of the COLOR and SHAPE of bricks. The rows in the table are:
+		COLOR   SHAPE               
+		blue    cube                
+		blue    cylinder            
+		green   cube                
+		red     cylinder            
+		red     rectangular cuboid  
+		yellow  rectangular cuboid 
+Which of the following queries will return the rows from this table where the value for COLOR is green or red?
+i.e. these rows:
+		COLOR  SHAPE               
+		green  cube                
+		red    cylinder            
+		red    rectangular cuboid 
+Please select all that apply
+
+	ANSWERS:- select * from bricks where  color = 'green' or     color = 'red';
+			select * from bricks where  color like 'green' or     color like 'red';
+			select * from bricks where  color in ('green', 'red');
+			select * from bricks where  not color in ('yellow', 'blue');
+
+
+2. Your application has the tables countries and currencies. These store country and currency details respectively. The rows in these tables are (column names in bold):
+		Countries
+			COUNTRY_NAME  CURRENCY_CODE  
+			USA           USD            
+			India         INR            
+			China         CNY      
+		
+		Currencies
+			CURRENCY_CODE  CURRENCY_NAME  
+			INR            India Rupee    
+			EUR            Euro           
+			GBP            British Pound 
+Using these data, you run the following query that left joins currencies and countries:
+		select * from currencies curr
+		left   join countries coun
+		on     coun.currency_code = curr.currency_code;
+Which of the following choices contain a row this query will return?
+
+Note: For clarity the text "<null>" indicates a null value and the column headings:
+
+CURRENCY_CODE  CURRENCY_NAME  COUNTRY_NAME  CURRENCY_CODE 
+appear in every choice.
+
+Please select all that apply
+
+		Answers:- CURRENCY_CODE  CURRENCY_NAME  COUNTRY_NAME  CURRENCY_CODE  
+					INR            India Rupee    India         INR 
+					
+				CURRENCY_CODE  CURRENCY_NAME  COUNTRY_NAME  CURRENCY_CODE  
+				GBP            British Pound  <null>        <null> 
+				
+
+3. You store people's details in the table people. This has the following data:
+		People
+			FULL_NAME      HEIGHT_IN_CM  
+			Mr. Tall       200           
+			Master Medium  170           
+			Miss Tiny      140
+FULL_NAME and HEIGHT_IN_CM are the columns which hold people's names and their heights respectively.
+
+Which of the following queries only return rows for people 170 cm and smaller?
+i.e. given the table above, the query should return the following two rows:
+		FULL_NAME      HEIGHT_IN_CM  
+		Master Medium  170           
+		Miss Tiny      140 
+Please select all that apply
+
+		Answers:- select * from people where  height_in_cm between 0 and 170;
+
+4. Which of the following statements are true about a cross join?
+	Answers:- If you don't specify a join condition for a table, the result is the cross join
+		A cross join returns the Cartesian product of the tables
+
+5. You can use aggregate functions directly in a where clause like this: where count(*) > 10  -> False
+  
+
+
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+List of aggregate functions that follows, functions followed by an asterisk (*) allow the windowing_clause.
+
+	APPROX_COUNT_DISTINCT
+	APPROX_COUNT_DISTINCT_AGG
+	APPROX_COUNT_DISTINCT_DETAIL
+	APPROX_MEDIAN
+	APPROX_PERCENTILE
+	APPROX_PERCENTILE_AGG
+	APPROX_PERCENTILE_DETAIL
+	AVG
+	COLLECT
+	CORR
+	CORR_*
+	COUNT
+	COVAR_POP
+	COVAR_SAMP
+	CUME_DIST
+	DENSE_RANK
+	FIRST
+	GROUP_ID
+	GROUPING
+	GROUPING_ID
+	JSON_ARRAYAGG
+	JSON_OBJECTAGG
+	LAST
+	LISTAGG
+	MAX
+	MEDIAN
+	MIN
+	PERCENT_RANK
+	PERCENTILE_CONT
+	PERCENTILE_DISC
+	RANK
+	REGR_ (Linear Regression) Functions
+	STATS_BINOMIAL_TEST
+	STATS_CROSSTAB
+	STATS_F_TEST
+	STATS_KS_TEST
+	STATS_MODE
+	STATS_MW_TEST
+	STATS_ONE_WAY_ANOVA
+	STATS_T_TEST_*
+	STATS_WSR_TEST
+	STDDEV
+	STDDEV_POP
+	STDDEV_SAMP
+	SUM
+	SYS_OP_ZONE_ID
+	SYS_XMLAGG
+	TO_APPROX_COUNT_DISTINCT
+	TO_APPROX_PERCENTILE
+	VAR_POP
+	VAR_SAMP
+	VARIANCE
+	XMLAGG
